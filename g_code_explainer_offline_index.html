@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>G‑code Explainer — offline</title>
+  <style>
+    :root {
+      --bg: #0f1115;
+      --panel: #151924;
+      --text: #e6e8ee;
+      --muted: #9aa3b2;
+      --accent: #7c93ff;
+      --accent-2:#28d1b6;
+      --danger:#ff7c7c;
+      --ok:#58d38c;
+      --border: #23293a;
+    }
+    * { box-sizing: border-box; }
+    html,body { height:100%; }
+    body {
+      margin:0; background: var(--bg); color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      line-height:1.4;
+      display:flex; flex-direction:column;
+    }
+    header {
+      display:flex; align-items:center; gap:12px; padding:16px 20px; border-bottom:1px solid var(--border);
+      background: linear-gradient(180deg, #13182a, #0f1115 60%);
+      position: sticky; top:0; z-index:10;
+    }
+    header h1 { font-size:18px; margin:0; letter-spacing:0.2px; font-weight:700; }
+    .chip { padding:4px 10px; border:1px solid var(--border); border-radius:999px; font-size:12px; color:var(--muted); }
+    .wrap { max-width:1200px; width:100%; margin:16px auto; padding:0 16px 24px; display:grid; gap:16px; }
+    .panel { background:var(--panel); border:1px solid var(--border); border-radius:16px; box-shadow:0 2px 24px rgba(0,0,0,.25); }
+    .panel h2 { margin:0 0 8px; font-size:14px; color:var(--muted); font-weight:600; }
+    .p-pad { padding:16px; }
+    .grid { display:grid; gap:16px; }
+    .grid.cols-2 { grid-template-columns: 1fr 1fr; }
+    .controls { display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
+    label { font-size:12px; color:var(--muted); display:block; margin-bottom:6px; }
+    select, input[type="text"], input[type="file"], button {
+      background:#0c0f18; border:1px solid var(--border); color:var(--text);
+      padding:10px 12px; border-radius:10px; font-size:14px; outline:none;
+    }
+    select:focus, input:focus, button:focus { border-color: var(--accent); box-shadow:0 0 0 3px rgba(124,147,255,.2); }
+    button { cursor:pointer; font-weight:600; }
+    .btn-accent { background: linear-gradient(180deg, #1c2450, #151b38); border-color:#24306b; }
+    .btn-ghost { background:transparent; }
+
+    textarea {
+      width:100%; min-height:220px; resize:vertical;
+      background:#0c0f18; border:1px solid var(--border); color:var(--text);
+      border-radius:12px; padding:12px 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:13px; line-height:1.5;
+    }
+
+    .kv { display:flex; flex-wrap:wrap; gap:12px; }
+    .kv .item { background:#0c0f18; border:1px solid var(--border); border-radius:10px; padding:8px 10px; font-size:12px; color:var(--muted); }
+    .item .v { color:var(--text); font-weight:700; margin-left:8px; }
+
+    table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+    thead th { position: sticky; top:0; background: #12192c; color:#c8d0e0; text-align:left; padding:10px; border-bottom:1px solid var(--border); z-index:3; }
+    tbody td { padding:10px; border-bottom:1px dashed #1f2536; vertical-align:top; }
+    tbody tr:hover { background:#0f1424; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .tag { display:inline-block; padding:2px 8px; border-radius:8px; border:1px solid var(--border); color:var(--muted); font-size:11px; margin-right:6px; }
+    .tag.ok { color:var(--ok); border-color:#214d39; background:rgba(88,211,140,.06); }
+    .tag.warn { color:#ffd18a; border-color:#4a3b14; background:rgba(255,209,138,.06); }
+    .tag.bad { color:var(--danger); border-color:#5a2222; background:rgba(255,124,124,.06); }
+
+    .scroll { max-height: 55vh; overflow:auto; border:1px solid var(--border); border-radius:12px; }
+    .pill { background:#0c0f18; padding:8px 10px; border:1px solid var(--border); border-radius:999px; color:var(--muted); font-size:12px; }
+    .right { margin-left:auto; }
+
+    footer { padding:12px 16px; color:var(--muted); text-align:center; border-top:1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>G‑code Explainer</h1>
+    <span class="chip">offline • działa w przeglądarce</span>
+    <span class="chip">PL</span>
+  </header>
+
+  <div class="wrap">
+    <div class="panel p-pad">
+      <div class="grid cols-2">
+        <div>
+          <h2>Wejście — wklej G‑code lub wczytaj plik</h2>
+          <textarea id="gcodeInput" placeholder="Wklej tutaj swój G-code… (np. linie z .gcode)\nPrzykład:\nM73 P0 R119\nM106 S0\nG1 X100 Y100 F12000 ; szybki przejazd\n…"></textarea>
+        </div>
+        <div>
+          <h2>Ustawienia / narzędzia</h2>
+          <div class="grid">
+            <div class="controls">
+              <div>
+                <label for="fw">Profil firmware</label>
+                <select id="fw">
+                  <option value="auto">Auto (Marlin + Klipper + RepRap)</option>
+                  <option value="marlin">Marlin / Prusa</option>
+                  <option value="klipper">Klipper</option>
+                  <option value="reprap">RepRapFirmware (Duet)</option>
+                </select>
+              </div>
+              <div>
+                <label for="file">Plik .gcode/.txt</label>
+                <input type="file" id="file" accept=".gcode,.gco,.nc,.txt" />
+              </div>
+              <div class="right">
+                <label>&nbsp;</label>
+                <button id="parseBtn" class="btn-accent">Analizuj</button>
+              </div>
+            </div>
+            <div class="controls">
+              <div style="flex:1 1 320px;">
+                <label for="filter">Filtruj (linia / opis / komenda)</label>
+                <input id="filter" type="text" placeholder="np. M106, EXCLUDE_OBJECT, temperatura, Z-hop…" />
+              </div>
+              <div class="right">
+                <label>&nbsp;</label>
+                <button id="exportCsv" class="btn-ghost">Eksportuj CSV</button>
+              </div>
+            </div>
+            <div class="kv" id="stats"></div>
+            <div class="pill">Wskazówka: <span class="mono">F</span> to zawsze <strong>mm/min</strong> (nie mm/s). <span class="mono">M83</span> = ekstruder względny, <span class="mono">M82</span> = ekstruder absolutny.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel p-pad">
+      <h2>Wynik analizy</h2>
+      <div class="scroll">
+        <table id="outTable">
+          <thead>
+            <tr>
+              <th style="width:72px">#</th>
+              <th style="width:160px">Komenda</th>
+              <th>Parametry</th>
+              <th>Opis</th>
+            </tr>
+          </thead>
+          <tbody id="tbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Zrobione z myślą o szybkim audycie G-code — działa lokalnie, nic nie opuszcza przeglądarki.
+  </footer>
+
+  <script>
+    // ——————————————————————————————————————————————————————————————
+    //  SŁOWNIK KOMEND (PL)
+    //  Minimalny, ale praktyczny zestaw (Marlin / Klipper / RepRap)
+    // ——————————————————————————————————————————————————————————————
+    const COMMANDS = {
+      // G-codes — ruch i układ jednostek/pozycjonowania
+      'G0': {
+        title:'Ruch szybki / liniowy (bez ekstruzji)',
+        desc:'Przejazd do wskazanej pozycji. Parametry: X/Y/Z pozycja [mm], F prędkość [mm/min]. Często zamiennie z G1.'
+      },
+      'G1': {
+        title:'Ruch liniowy (druk/ekstruzja/travel)',
+        desc:'Ruch po linii prostej. Parametry: X/Y/Z pozycja [mm], E ekstruzja [mm filamentu], F prędkość [mm/min]. Tryb bezwzględny G90 vs względny G91; ekstruder M82/M83.'
+      },
+      'G2': { title:'Ruch łukiem CW', desc:'Ruch po łuku zgodnie z ruchem wskazówek zegara. Parametry: X/Y/Z koniec, I/J/K wektory środka, F prędkość.' },
+      'G3': { title:'Ruch łukiem CCW', desc:'Ruch po łuku przeciwnie do ruchu wskazówek zegara. Parametry jak w G2.' },
+      'G4': { title:'Pauza (dwell)', desc:'Zatrzymanie na czas: P [ms] lub S [s].' },
+      'G10': { title:'Retrakcja (RepRap) / Ustawienie offsetu (Marlin)', desc:'Uwaga: w RepRap G10/G11 = retrakcja/przywrócenie. W Marlinie G10 często: ustawienie offsetu narzędzia.' },
+      'G11': { title:'Deretrakcja (RepRap)', desc:'Przywrócenie filamentu po G10 (RepRap).' },
+      'G20': { title:'Cale', desc:'Jednostki w calach.' },
+      'G21': { title:'Milimetry', desc:'Jednostki w milimetrach (typowe dla FDM).' },
+      'G28': { title:'Homing osi', desc:'Powrót do krańcówek. Parametry: X/Y/Z wybór osi.' },
+      'G29': { title:'Kalibracja/siatka stołu', desc:'Mesh bed leveling (warianty zależnie od firmware).'},
+      'G90': { title:'Pozycjonowanie absolutne', desc:'Współrzędne X/Y/Z interpretowane absolutnie.' },
+      'G91': { title:'Pozycjonowanie względne', desc:'Współrzędne X/Y/Z interpretowane różnicowo (inkrementalnie).'},
+      'G92': { title:'Ustaw bieżącą pozycję', desc:'Ustawia aktualne współrzędne bez ruchu. Często G92 E0 zeruje licznik ekstrudera.' },
+
+      // M-codes — temperatury, wentylatory, dynamika ruchu, itp.
+      'M17': { title:'Włącz silniki', desc:'Zasilenie/uzbrojenie silników krokowych.' },
+      'M18': { title:'Wyłącz silniki', desc:'Odłącza silniki (syn. M84).' },
+      'M73': { title:'Postęp druku / ETA (Prusa/Marlin)', desc:'Wyświetla progres. Parametry: P [% postępu], R [min do końca].' },
+      'M82': { title:'Ekstruder absolutny', desc:'Wartości E interpretowane absolutnie.' },
+      'M83': { title:'Ekstruder względny', desc:'Wartości E interpretowane różnicowo.' },
+      'M84': { title:'Wyłącz silniki (po bezczynności lub natychmiast)', desc:'Często po zakończeniu druku.' },
+      'M104': { title:'Ustaw temp. hotendu (bez czekania)', desc:'S [°C]. Nie czeka na osiągnięcie temperatury (użyj M109 aby czekać).'},
+      'M105': { title:'Pobierz temperatury', desc:'Zapytanie o aktualne temperatury (host ↔ firmware).'},
+      'M106': { title:'Wentylator wydruku', desc:'S — prędkość: 0–255 (Marlin/RepRap) lub 0.0–1.0 (Klipper). P — numer wentylatora (jeśli wielowentylatorowo).'},
+      'M107': { title:'Wyłącz wentylator wydruku', desc:'Ustawia prędkość wentylatora na 0.'},
+      'M109': { title:'Ustaw temp. hotendu i CZEKAJ', desc:'S [°C]. Wstrzymuje G-code, aż osiągnie temperaturę.'},
+      'M140': { title:'Ustaw temp. stołu (bez czekania)', desc:'S [°C]. Użyj M190 aby czekać.'},
+      'M141': { title:'Ustaw temp. komory', desc:'S [°C], jeśli sprzęt obsługuje.'},
+      'M190': { title:'Ustaw temp. stołu i CZEKAJ', desc:'S [°C]. Czeka na osiągnięcie.'},
+      'M204': { title:'Przyspieszenia', desc:'S lub P/R/T dla różnych typów ruchu (zależnie od firmware). W Klipperze preferowane SET_VELOCITY_LIMIT.'},
+      'M205': { title:'Zaawansowane limity ruchu', desc:'Jerk/junction deviation itd. Zależne od firmware.'},
+      'M220': { title:'Mnożnik prędkości', desc:'S [%]. Zmienia prędkość w locie.'},
+      'M221': { title:'Mnożnik przepływu', desc:'S [%]. Skaluje E.'},
+      'M300': { title:'Dźwięk (beep)', desc:'S częstotliwość [Hz], P czas [ms].'},
+      'M400': { title:'Poczekaj na zakończenie ruchów', desc:'Opróżnia bufor ruchu (flush).'},
+      'M851': { title:'Z-offset', desc:'Ustawienie offsetu sondy/osi Z.'},
+      'M900': { title:'Linear Advance (Marlin)', desc:'K — współczynnik kompensacji ciśnienia.'},
+      'M118': { title:'Wiadomość do hosta', desc:'Przekazuje tekst do konsoli/hosta.'},
+
+      // Narzędzia
+      'T*': { title:'Zmiana narzędzia/ekstrudera', desc:'Wybiera głowicę/ekstruder o zadanym numerze (np. T0, T1).'},
+
+      // Klipper / makra / funkcje rozszerzone
+      'START_PRINT': { title:'Makro startu druku (Klipper)', desc:'Sekwencja startowa. Parametry np. EXTRUDER_TEMP, BED_TEMP itp.'},
+      'END_PRINT':   { title:'Makro końca druku (Klipper)',  desc:'Sekwencja końcowa: parkowanie, chłodzenie, itp.'},
+      'SET_VELOCITY_LIMIT': { title:'Limity prędkości/accel (Klipper)', desc:'ACCEL, ACCEL_TO_DECEL, MINIMUM_CRUISE_RATIO, SQUARE_CORNER_VELOCITY itd.'},
+      'SET_PRESSURE_ADVANCE': { title:'Kompensacja ciśnienia (Klipper)', desc:'ADVANCE, SMOOTH_TIME — odpowiednik M900 (Marlin).'},
+      'EXCLUDE_OBJECT_START': { title:'Początek obiektu (Klipper)', desc:'Umożliwia wykluczenie pojedynczego obiektu podczas druku. Param: NAME=…'},
+      'EXCLUDE_OBJECT_END':   { title:'Koniec obiektu (Klipper)', desc:'Domyka zakres poprzedniego EXCLUDE_OBJECT_START.'},
+      'EXCLUDE_OBJECT_DEFINE':{ title:'Definicja obiektu (Klipper)', desc:'Geometryczne granice obiektu dla UI.'},
+      'SAVE_GCODE_STATE':     { title:'Zapisz stan G-code (Klipper)', desc:'Zapisuje tryby (G90/G91, M82/M83, pozycje) pod nazwą.'},
+      'RESTORE_GCODE_STATE':  { title:'Przywróć stan G-code (Klipper)', desc:'Przywraca zapisany stan; bezpieczne makra.'},
+      'BED_MESH_CALIBRATE':   { title:'Kalibracja siatki stołu (Klipper)', desc:'Pomiar i zapis profilu stołu.'},
+      'BED_MESH_PROFILE':     { title:'Profil siatki stołu (Klipper)', desc:'LOAD / SAVE / REMOVE — zarządzanie profilami.'},
+      'TURN_OFF_HEATERS':     { title:'Wyłącz grzałki (Klipper)', desc:'Bezpieczne wyłączenie wszystkich ogrzewaczy.'}
+    };
+
+    // Wspólne podpowiedzi parametrów (pokazywane kontekstowo)
+    const PARAM_HINTS = {
+      X:'pozycja X [mm]', Y:'pozycja Y [mm]', Z:'pozycja Z [mm]',
+      E:'ekstruzja (mm filamentu — M83 względnie / M82 absolutnie)',
+      F:'prędkość [mm/min] (nie mm/s)',
+      S:'wartość/ustawienie (np. temperatura [°C] lub PWM wentylatora)',
+      P:'czas [ms] / indeks / parametr zależny od komendy',
+      R:'pozostały czas [min] / temperatura standby (zależnie od komendy)',
+      I:'wektor łuku X (G2/G3)', J:'wektor łuku Y (G2/G3)', K:'wektor łuku Z (G2/G3)',
+      L:'liczba powtórzeń/segmentów', D:'średnica/dystans (zależnie)',
+      A:'oś A', B:'oś B', C:'oś C', U:'oś U', V:'oś V', W:'oś W',
+      H:'uchwyt/offset (zależnie)', Q:'czas [ms] / jerk (zależnie)',
+      NAME:'nazwa (np. obiektu/makra)'
+    };
+
+    // ——————————————————————————————————————————————————————————————
+    //  LOGIKA APLIKACJI
+    // ——————————————————————————————————————————————————————————————
+    const $ = s => document.querySelector(s);
+    const $$ = s => Array.from(document.querySelectorAll(s));
+
+    const input = $('#gcodeInput');
+    const fwSel = $('#fw');
+    const fileEl = $('#file');
+    const parseBtn = $('#parseBtn');
+    const filterEl = $('#filter');
+    const statsEl = $('#stats');
+    const tbody = $('#tbody');
+    const exportBtn = $('#exportCsv');
+
+    fileEl.addEventListener('change', async (e)=>{
+      const f = e.target.files?.[0];
+      if(!f) return;
+      const text = await f.text();
+      input.value = text;
+      parseNow();
+    });
+
+    parseBtn.addEventListener('click', parseNow);
+    fwSel.addEventListener('change', parseNow);
+    input.addEventListener('input', debounce(parseNow, 300));
+    filterEl.addEventListener('input', debounce(applyFilter, 100));
+    exportBtn.addEventListener('click', exportCSV);
+
+    function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }}
+
+    function parseNow(){
+      const profile = fwSel.value;
+      const lines = input.value.split(/\r?\n/);
+      const parsed = lines.map((raw, idx)=> parseLine(raw, idx+1, profile));
+      render(parsed);
+    }
+
+    function parseLine(raw, lineNo, profile){
+      const out = { lineNo, raw, cmd:'', params:[], comment:'', desc:'', match:false, tags:[] };
+      if(!raw || /^\s*$/.test(raw)) { out.desc='(pusta linia)'; return out; }
+
+      // Oddziel komentarz zaczynający się od ';'
+      const semi = raw.indexOf(';');
+      let code = raw; let comment = '';
+      if(semi >= 0){
+        code = raw.slice(0, semi);
+        comment = raw.slice(semi+1).trim();
+      }
+      out.comment = comment;
+      code = code.trim();
+      if(!code){ out.desc = comment ? `Komentarz: ${comment}`: '(komentarz)'; return out; }
+
+      // Pierwszy token = komenda (np. G1, M104, T0, START_PRINT)
+      const tokens = code.split(/\s+/).filter(Boolean);
+      let cmd = tokens[0].toUpperCase();
+
+      // Rozpoznaj T# jako T*
+      if(/^T\d+$/i.test(cmd)) out.cmd = cmd, out._key = 'T*';
+      else out.cmd = cmd, out._key = cmd;
+
+      // Zbierz parametry XYZEFS… oraz pary NAME=…
+      const params = [];
+      for(let i=1;i<tokens.length;i++){
+        const t = tokens[i];
+        const kv = /^([A-Za-z]+)=(.+)$/; // NAME=foo lub EXTRUDER_TEMP=220
+        const mKV = t.match(kv);
+        if(mKV){ params.push({k:mKV[1].toUpperCase(), v:mKV[2]}); continue; }
+        const m = /^([A-Za-z])([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)$/.exec(t);
+        if(m){ params.push({k:m[1].toUpperCase(), v:m[2]}); continue; }
+        // Token niepasujący — dopisz jako "inna wartość"
+        params.push({k:'?', v:t});
+      }
+      out.params = params;
+
+      // Opis bazowy ze słownika
+      const entry = COMMANDS[out._key];
+      if(entry){
+        out.match = true;
+        out.title = entry.title;
+        out.desc = entry.desc;
+      } else if (/^[GMT]\d+$/i.test(out.cmd)) {
+        out.title = 'Nieznana/niestandardowa komenda ' + out.cmd;
+        out.desc = 'Sprawdź dokumentację firmware (może nieobsługiwana w tym profilu).';
+      } else {
+        out.title = 'Makro/komenda niestandardowa';
+        out.desc = 'Prawdopodobnie makro (np. Klipper) lub polecenie własne. Zobacz parametry.';
+      }
+
+      // Wzbogacenie opisu kontekstowo — wybrane przypadki
+      if(out._key === 'M106'){
+        const s = params.find(p=>p.k==='S');
+        const p = params.find(p=>p.k==='P');
+        out.tags.push('wentylator');
+        if(s){
+          out.tags.push('S=' + s.v);
+          out.desc += ' Wartość S: ' + s.v + (profile==='klipper'?' (0.0–1.0 Klipper).': ' (0–255 Marlin/RepRap).');
+        }
+        if(p){ out.tags.push('P=' + p.v); }
+      }
+      if(out._key === 'M104' || out._key === 'M109' || out._key==='M140' || out._key==='M190'){
+        const s = params.find(p=>p.k==='S');
+        if(s){ out.tags.push('°C ' + s.v); }
+      }
+      if(out._key === 'G1' || out._key==='G0'){
+        const xyze = ['X','Y','Z','E','F'].map(k=>params.find(p=>p.k===k)).filter(Boolean);
+        xyze.forEach(p=> out.tags.push(p.k + '=' + p.v));
+      }
+      if(out._key === 'EXCLUDE_OBJECT_START'){
+        const n = params.find(p=>p.k==='NAME');
+        if(n) out.tags.push('NAME=' + n.v);
+      }
+
+      // Dodaj ogólne podpowiedzi parametrów
+      if(params.length){
+        const hints = params.map(p => {
+          const hint = PARAM_HINTS[p.k];
+          return hint ? `${p.k} — ${hint}` : `${p.k} — parametr`;
+        });
+        out.desc += ' \nParametry: ' + hints.join('; ');
+      }
+
+      // Dodaj komentarz linii do opisu
+      if(comment){ out.desc += `\nKomentarz: ${comment}`; }
+
+      return out;
+    }
+
+    function render(rows){
+      // Stats
+      const total = rows.length;
+      const codeRows = rows.filter(r=>r.cmd);
+      const recognized = codeRows.filter(r=>r.match).length;
+      const comments = rows.filter(r=>!r.cmd && r.comment).length;
+      const unknown = codeRows.length - recognized;
+
+      statsEl.innerHTML = '';
+      addKV('Wszystkie linie', total);
+      addKV('Linie z komendami', codeRows.length);
+      addKV('Rozpoznane komendy', `${recognized}`);
+      addKV('Nierozpoznane/makra', `${unknown}`);
+
+      // Table
+      tbody.innerHTML='';
+      const frag = document.createDocumentFragment();
+      for(const r of rows){
+        const tr = document.createElement('tr');
+        const tdNo = document.createElement('td');
+        tdNo.textContent = r.lineNo;
+        tdNo.className='mono';
+
+        const tdCmd = document.createElement('td');
+        tdCmd.innerHTML = `<div class="mono">${escapeHtml(r.cmd || '')}</div>` + (r.title? `<div class="tag ${r.match?'ok':'warn'}">${escapeHtml(r.title)}</div>`: '');
+
+        const tdParams = document.createElement('td');
+        if(r.params?.length){
+          const span = document.createElement('div');
+          span.className='mono';
+          span.textContent = r.params.map(p=>`${p.k}=${p.v}`).join(' ');
+          tdParams.appendChild(span);
+        }
+        if(r.tags?.length){
+          const tagsDiv = document.createElement('div');
+          r.tags.forEach(t=>{
+            const s = document.createElement('span'); s.className='tag'; s.textContent = t; tagsDiv.appendChild(s);
+          });
+          tdParams.appendChild(tagsDiv);
+        }
+
+        const tdDesc = document.createElement('td');
+        tdDesc.textContent = r.desc || '';
+
+        tr.append(tdNo, tdCmd, tdParams, tdDesc);
+        frag.appendChild(tr);
+      }
+      tbody.appendChild(frag);
+      applyFilter();
+    }
+
+    function addKV(k, v){
+      const div = document.createElement('div');
+      div.className='item';
+      div.innerHTML = `<span>${k}</span><span class="v">${v}</span>`;
+      statsEl.appendChild(div);
+    }
+
+    function applyFilter(){
+      const q = filterEl.value.trim().toLowerCase();
+      const rows = Array.from(tbody.querySelectorAll('tr'));
+      if(!q){ rows.forEach(r=>r.style.display=''); return; }
+      rows.forEach(r=>{
+        const text = r.innerText.toLowerCase();
+        r.style.display = text.includes(q) ? '' : 'none';
+      });
+    }
+
+    function exportCSV(){
+      const rows = Array.from(tbody.querySelectorAll('tr')).filter(r=>r.style.display !== 'none');
+      if(!rows.length) return;
+      const cols = ['#','Komenda','Parametry','Opis'];
+      const out = [cols.join(';')];
+      rows.forEach(r=>{
+        const tds = r.querySelectorAll('td');
+        const line = [tds[0].innerText, tds[1].innerText.split('\n')[0], tds[2].innerText, tds[3].innerText]
+          .map(csvEscape).join(';');
+        out.push(line);
+      });
+      const blob = new Blob([out.join('\n')], {type: 'text/csv;charset=utf-8;'});
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'gcode-opis.csv';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    function csvEscape(s){
+      s = (s||'').replaceAll('\"','"');
+      if(/[;"\n]/.test(s)) return '"' + s.replaceAll('"','""') + '"';
+      return s;
+    }
+
+    function escapeHtml(s){
+      return String(s).replace(/[&<>\"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;','\'':'&#39;' }[c]));
+    }
+
+    // Inicjalizacja przykładowym tekstem (opcjonalnie)
+    input.value = `M73 P0 R119\nM106 S0\nM106 P2 S0\nM140 S0\nM104 S0\nSTART_PRINT EXTRUDER_TEMP=220 BED_TEMP=50\nT0\nM109 S220\nM204 S2000\nG1 Z3 F600\nM83\nG1 Y150 F12000\nG1 X0 F12000\nG1 Z0.2 F600\nG1 X0 Y150 F6000\nG1 X0 Y0 E15 F6000\nG1 X150 Y0 E15 F6000\nG92 E0\nG1 Z1 F600\nM73 P0 R118\nG90\nG21\nM83 ; use relative distances for extrusion\n; filament start gcode\nM104 S220\nM106 S0\nM106 P2 S0\n;LAYER_CHANGE\n;Z:0.4\n;HEIGHT:0.4\n;BEFORE_LAYER_CHANGE\n;0.4\nG92 E0\nG1 E-.5 F2400\nSET_VELOCITY_LIMIT ACCEL=500 ACCEL_TO_DECEL=250\nSET_VELOCITY_LIMIT SQUARE_CORNER_VELOCITY=9\nEXCLUDE_OBJECT_START NAME=Sześcian_id_4_copy_0\nG1 Z.8 F30000\nG1 X182.38 Y109.408\nG1 Z.8\nG1 Z.4\nG1 E.5 F2400\nG1 E-.35 F2400\nM106 S0\nM106 P2 S0\nEND_PRINT\nM73 P100 R0`;
+    parseNow();
+  </script>
+</body>
+</html>
